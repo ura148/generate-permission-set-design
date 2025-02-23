@@ -89,18 +89,33 @@ async function generateImage(markdownContent) {
   // テーブル部分のみを抽出
   const lines = markdownContent.split("\n");
   const tableStartIndex = lines.findIndex((line) =>
-    line.startsWith("| オブジェクト名")
+    line.includes("| オブジェクト名 |")
   );
   if (tableStartIndex === -1) return null;
 
   const tableLines = lines.slice(tableStartIndex);
   const tableRows = tableLines.filter((line) => line.startsWith("|"));
 
-  // キャンバスのサイズを設定（テーブルの行数に応じて高さを調整）
-  const width = 600;
-  const rowHeight = 30;
+  // ヘッダー行から列数を取得
+  const headerCells = tableRows[0]
+    .split("|")
+    .filter((cell) => cell.trim()).length;
+
+  // キャンバスのサイズを設定
+  const cellPadding = 10;
+  const rowHeight = 40;
   const padding = 20;
-  const height = tableRows.length * rowHeight + padding * 2;
+
+  // 列幅を設定
+  const columnWidths = [
+    200, // オブジェクト名
+    250, // オブジェクトAPI名
+    ...Array(headerCells - 2).fill(150) // 残りの列は固定幅
+  ];
+
+  const width =
+    columnWidths.reduce((sum, width) => sum + width, 0) + padding * 2;
+  const height = (tableRows.length - 1) * rowHeight + padding * 2; // 区切り行を除外
 
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
@@ -109,11 +124,17 @@ async function generateImage(markdownContent) {
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, width, height);
 
+  // グリッド線の色を設定
+  ctx.strokeStyle = "#cccccc";
+  ctx.lineWidth = 1;
+
   // テーブルの描画
   let y = padding;
   let isHeader = true;
+  let rowIndex = 0;
 
   for (const line of tableRows) {
+    // 区切り行をスキップ
     if (line.includes(":-")) continue;
 
     const cells = line
@@ -121,47 +142,51 @@ async function generateImage(markdownContent) {
       .filter((cell) => cell.trim())
       .map((cell) => cell.trim());
 
-    if (cells.length === 3) {
-      // セルの背景色
+    if (cells.length >= 2) {
+      // ヘッダー行の背景
       if (isHeader) {
         ctx.fillStyle = "#f0f0f0";
-        ctx.fillRect(padding, y - 5, width - padding * 2, rowHeight);
+        ctx.fillRect(padding, y, width - padding * 2, rowHeight);
       }
 
-      // テキストの描画
-      ctx.fillStyle = "#000000";
-      ctx.font = isHeader ? "bold 14px Arial" : "14px Arial";
-
-      const columnWidths = [180, 220, 100];
+      // セルの描画
       let x = padding;
-
       cells.forEach((cell, index) => {
-        ctx.fillText(cell, x + 10, y + 15);
-        x += columnWidths[index];
+        if (index < columnWidths.length) {
+          const cellWidth = columnWidths[index];
+
+          // セルの背景と境界線
+          ctx.strokeRect(x, y, cellWidth, rowHeight);
+
+          // テキストの描画
+          ctx.fillStyle = "#000000";
+          ctx.font = isHeader ? "bold 14px Arial" : "14px Arial";
+
+          // テキストの省略処理
+          const maxWidth = cellWidth - cellPadding * 2;
+          let displayText = cell;
+          if (ctx.measureText(cell).width > maxWidth) {
+            while (
+              ctx.measureText(displayText + "...").width > maxWidth &&
+              displayText.length > 0
+            ) {
+              displayText = displayText.slice(0, -1);
+            }
+            displayText += "...";
+          }
+
+          // テキストを縦方向中央に配置
+          const textHeight = 14; // フォントサイズと同じ
+          const textY = y + (rowHeight + textHeight) / 2;
+
+          ctx.fillText(displayText, x + cellPadding, textY);
+          x += cellWidth;
+        }
       });
-
-      // セルの罫線
-      ctx.strokeStyle = "#cccccc";
-      ctx.beginPath();
-
-      // 横線
-      ctx.moveTo(padding, y + rowHeight - 5);
-      ctx.lineTo(width - padding, y + rowHeight - 5);
-
-      // 縦線
-      x = padding;
-      ctx.moveTo(x, y - 5);
-      ctx.lineTo(x, y + rowHeight - 5);
-      cells.forEach((_, index) => {
-        x += columnWidths[index];
-        ctx.moveTo(x, y - 5);
-        ctx.lineTo(x, y + rowHeight - 5);
-      });
-
-      ctx.stroke();
 
       y += rowHeight;
       isHeader = false;
+      rowIndex++;
     }
   }
 

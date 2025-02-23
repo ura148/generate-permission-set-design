@@ -43,6 +43,7 @@
   },
   "dependencies": {
     "@inquirer/prompts": "^7.3.2",
+    "canvas": "^2.11.2",
     "dotenv": "^16.4.7",
     "fast-xml-parser": "^5.0.6",
     "inquirer": "^12.4.2",

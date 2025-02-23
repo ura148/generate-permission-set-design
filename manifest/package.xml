@@ -4,5 +4,9 @@
     <members>Sample__c</members>
 		<name>CustomObject</name>
 	</types>
+  <types>
+		<members>PermissionSetTest</members>
+		<name>PermissionSet</name>
+	</types>
 	<version>63.0</version>
 </Package>

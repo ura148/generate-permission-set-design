@@ -3,6 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "description": "Salesforce App",
+  "type": "module",
   "scripts": {
     "lint": "eslint **/{aura,lwc}/**/*.js",
     "test": "npm run test:unit",
@@ -14,7 +15,8 @@
     "prettier:verify": "prettier --check \"**/*.{cls,cmp,component,css,html,js,json,md,page,trigger,xml,yaml,yml}\"",
     "postinstall": "husky install",
     "precommit": "lint-staged",
-    "sf:describe:object": "node scripts/jsforce/describe.js ./.describe_data"
+    "sf:describe:object": "node scripts/jsforce/describe.js ./.describe_data",
+    "sf:generate:design": "node scripts/generate-design.js"
   },
   "devDependencies": {
     "@lwc/eslint-plugin-lwc": "^2.0.0",

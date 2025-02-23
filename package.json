@@ -42,6 +42,7 @@
   "dependencies": {
     "@inquirer/prompts": "^7.3.2",
     "dotenv": "^16.4.7",
+    "fast-xml-parser": "^5.0.6",
     "inquirer": "^12.4.2",
     "jsforce": "^3.6.5"
   }

@@ -2,7 +2,8 @@
 const jsforce = require("jsforce");
 const fs = require("fs");
 const path = require("path");
-const { checkbox } = require("@inquirer/prompts");
+const { checkbox, confirm } = require("@inquirer/prompts");
+const { XMLParser } = require("fast-xml-parser");
 
 // プロジェクトルートの.envファイルから環境変数をロード
 require("dotenv").config({ path: path.join(__dirname, "../../.env") });
@@ -52,24 +53,68 @@ const conn = new jsforce.Connection({ loginUrl });
         type: "カスタム"
       }));
 
-    // オブジェクトを選択するプロンプトを表示（複数選択可能）
-    const selectedObjects = await checkbox({
-      message:
-        "describeを実行するオブジェクトを選択してください (Spaceキーで選択/解除):",
-      choices: [
-        { name: "=== 標準オブジェクト ===", value: "", disabled: true },
-        ...standardObjects.map((obj) => ({
-          name: `${obj.label} (${obj.name})`,
-          value: obj.name
-        })),
-        { name: "=== カスタムオブジェクト ===", value: "", disabled: true },
-        ...customObjects.map((obj) => ({
-          name: `${obj.label} (${obj.name})`,
-          value: obj.name
-        }))
-      ],
-      pageSize: 20
+    // package.xmlからCustomObjectを読み込むかどうかを確認
+    const usePackageXml = await confirm({
+      message: "package.xmlに記載されているCustomObjectを選択しますか？"
     });
+
+    let selectedObjects;
+    if (usePackageXml) {
+      // package.xmlを読み込む
+      const packageXmlPath = path.join(__dirname, "../../manifest/package.xml");
+      const packageXmlContent = fs.readFileSync(packageXmlPath, "utf8");
+
+      // XMLをパース
+      const parser = new XMLParser();
+      const packageData = parser.parse(packageXmlContent);
+
+      // CustomObjectのmembersを取得
+      const customObjectTypes = packageData.Package.types;
+      const customObjectMembers = Array.isArray(customObjectTypes)
+        ? customObjectTypes.find((type) => type.name === "CustomObject")
+            ?.members || []
+        : customObjectTypes?.name === "CustomObject"
+          ? [customObjectTypes.members].flat()
+          : [];
+
+      if (customObjectMembers.length === 0) {
+        console.log("package.xmlにCustomObjectが見つかりませんでした。");
+        // 通常の選択画面に切り替え
+        selectedObjects = await showObjectSelectionPrompt(
+          standardObjects,
+          customObjects
+        );
+      } else {
+        selectedObjects = customObjectMembers;
+      }
+    } else {
+      // 通常の選択画面を表示
+      selectedObjects = await showObjectSelectionPrompt(
+        standardObjects,
+        customObjects
+      );
+    }
+
+    // オブジェクト選択プロンプトを表示する関数
+    async function showObjectSelectionPrompt(standardObjects, customObjects) {
+      return await checkbox({
+        message:
+          "describeを実行するオブジェクトを選択してください (Spaceキーで選択/解除):",
+        choices: [
+          { name: "=== 標準オブジェクト ===", value: "", disabled: true },
+          ...standardObjects.map((obj) => ({
+            name: `${obj.label} (${obj.name})`,
+            value: obj.name
+          })),
+          { name: "=== カスタムオブジェクト ===", value: "", disabled: true },
+          ...customObjects.map((obj) => ({
+            name: `${obj.label} (${obj.name})`,
+            value: obj.name
+          }))
+        ],
+        pageSize: 20
+      });
+    }
 
     // 選択された各オブジェクトに対してdescribe情報を取得
     for (const objectName of selectedObjects) {

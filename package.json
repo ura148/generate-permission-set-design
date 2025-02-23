@@ -13,10 +13,11 @@
     "prettier": "prettier --write \"**/*.{cls,cmp,component,css,html,js,json,md,page,trigger,xml,yaml,yml}\"",
     "prettier:verify": "prettier --check \"**/*.{cls,cmp,component,css,html,js,json,md,page,trigger,xml,yaml,yml}\"",
     "postinstall": "husky install",
-    "precommit": "lint-staged"
+    "precommit": "lint-staged",
+    "sf:describe:object": "node scripts/jsforce/describe.js ./.describe_data"
   },
   "devDependencies": {
-    "@lwc/eslint-plugin-lwc": "^1.6.3",
+    "@lwc/eslint-plugin-lwc": "^2.0.0",
     "@prettier/plugin-xml": "^3.2.1",
     "@salesforce/eslint-config-lwc": "^3.5.2",
     "@salesforce/eslint-plugin-aura": "^2.1.0",
@@ -37,5 +38,9 @@
     "**/{aura,lwc}/**/*.js": [
       "eslint"
     ]
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "jsforce": "^3.6.5"
   }
 }

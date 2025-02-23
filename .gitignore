@@ -6,9 +6,9 @@
 .sf/
 .sfdx/
 .localdevserver/
+.config/
 deploy-options.json
-.project-scratch-def.json
-
+project-scratch-def.json
 # LWC VSCode autocomplete
 **/lwc/jsconfig.json
 

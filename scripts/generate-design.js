@@ -5,7 +5,7 @@ import path from "path";
 import { createCanvas } from "canvas";
 import { execSync } from "child_process";
 
-async function getCustomObjectsFromPackageXml() {
+async function getCustomFieldsFromPackageXml() {
   const xmlContent = await fs.readFile("manifest/package.xml", "utf-8");
   const parser = new XMLParser({
     ignoreAttributes: true,
@@ -13,10 +13,10 @@ async function getCustomObjectsFromPackageXml() {
   });
   const result = parser.parse(xmlContent);
 
-  const customObjects = result.Package.types.find(
-    (type) => type.name === "CustomObject"
+  const customFields = result.Package.types.find(
+    (type) => type.name === "CustomField"
   );
-  return customObjects ? customObjects.members : [];
+  return customFields ? customFields.members : [];
 }
 
 async function retrievePermissionSet(permissionSetName) {
@@ -94,14 +94,16 @@ async function getPermissionSetMetadata(permissionSetName) {
   }
 }
 
-async function generateMarkdownTable(permissionSetName, customObjects) {
-  const metadata = await getPermissionSetMetadata(permissionSetName);
-
+async function generateObjectPermissionsTable(
+  permissionSetName,
+  customObjects,
+  metadata
+) {
   let markdownContent = `# オブジェクト権限設計書
 
 ## 権限セット: ${permissionSetName}
 
-### 権限の説明
+### オブジェクト権限の説明
 - C: レコードの作成
 - R: レコードの参照
 - U: レコードの編集
@@ -115,7 +117,7 @@ async function generateMarkdownTable(permissionSetName, customObjects) {
 | オブジェクト名 | オブジェクトAPI名 | 権限 
 |:--|:--|:--`;
 
-  const rows = customObjects.map((objName) => {
+  const objectRows = customObjects.map((objName) => {
     const objPermission = metadata.PermissionSet.objectPermissions?.find(
       (p) => p.object === objName
     );
@@ -133,13 +135,51 @@ async function generateMarkdownTable(permissionSetName, customObjects) {
       if (permissions === "") permissions = "-";
     }
 
-    // カスタムオブジェクトの表示名は__cを除いて表示
     const displayName = objName.replace("__c", "");
-
     return `| ${displayName} | ${objName} | ${permissions} `;
   });
 
-  markdownContent += "\n" + rows.join("\n");
+  markdownContent += "\n" + objectRows.join("\n");
+  return markdownContent;
+}
+
+async function generateFieldPermissionsTable(
+  permissionSetName,
+  customFields,
+  metadata
+) {
+  let markdownContent = `# 項目権限設計書
+
+## 権限セット: ${permissionSetName}
+
+### 項目権限の説明
+- R: 参照可能
+- RU: 参照・編集可能
+- -: 権限なし
+
+### 項目権限一覧
+
+| オブジェクト名 | オブジェクトAPI名 | 項目名 | 項目API名 | 権限 |
+|:--|:--|:--|:--|:--|`;
+
+  for (const fieldFullName of customFields) {
+    const [objName, fieldName] = fieldFullName.split(".");
+    const displayName = objName.replace("__c", "");
+    const fieldPerm = metadata.PermissionSet.fieldPermissions?.find(
+      (p) => p.field === fieldFullName
+    );
+
+    let permission = "-";
+    if (fieldPerm) {
+      if (fieldPerm.readable && fieldPerm.editable) {
+        permission = "RU";
+      } else if (fieldPerm.readable) {
+        permission = "R";
+      }
+    }
+    markdownContent += `\n| ${displayName} | ${objName} | ${fieldName} | ${fieldName} | ${permission} |`;
+  }
+
   return markdownContent;
 }
 
@@ -164,16 +204,28 @@ async function generateImage(markdownContent) {
   const rowHeight = 40;
   const padding = 20;
 
-  // 列幅を設定
-  const columnWidths = [
-    200, // オブジェクト名
-    250, // オブジェクトAPI名
-    ...Array(headerCells - 2).fill(150) // 残りの列は固定幅
-  ];
+  // 列幅を動的に設定
+  let columnWidths;
+  if (headerCells <= 3) {
+    // オブジェクト権限用
+    columnWidths = [200, 250, 100];
+  } else if (headerCells <= 5) {
+    // 基本的な項目権限用
+    columnWidths = [200, 250, 150, 200, 100];
+  } else {
+    // 複数の権限セットを含む場合
+    columnWidths = [
+      200, // オブジェクト名
+      250, // オブジェクトAPI名
+      150, // 項目名
+      200, // 項目API名
+      ...Array(headerCells - 4).fill(100) // 各権限セット用の列
+    ];
+  }
 
   const width =
     columnWidths.reduce((sum, width) => sum + width, 0) + padding * 2;
-  const height = (tableRows.length - 1) * rowHeight + padding * 2; // 区切り行を除外
+  const height = (tableRows.length - 1) * rowHeight + padding * 2;
 
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
@@ -234,7 +286,7 @@ async function generateImage(markdownContent) {
           }
 
           // テキストを縦方向中央に配置
-          const textHeight = 14; // フォントサイズと同じ
+          const textHeight = 14;
           const textY = y + (rowHeight + textHeight) / 2;
 
           ctx.fillText(displayText, x + cellPadding, textY);
@@ -265,10 +317,8 @@ async function getPermissionSetsFromPackageXml() {
   return permissionSets ? permissionSets.members : [];
 }
 
-async function createDesignFolder(permissionSetName, markdownContent) {
+async function createDesignFolder(permissionSetName, metadata, customFields) {
   const designPath = path.join(".design", "permissionsets", permissionSetName);
-  const designFilePath = path.join(designPath, "object-permissions.md");
-  const imageFilePath = path.join(designPath, "object-permissions.png");
 
   try {
     await fs.access(designPath);
@@ -278,26 +328,54 @@ async function createDesignFolder(permissionSetName, markdownContent) {
     console.log(`Created folder: ${designPath}`);
   }
 
-  // Save markdown file
-  await fs.writeFile(designFilePath, markdownContent);
-  console.log(`Created markdown file: ${designFilePath}`);
+  // Get custom objects from custom fields
+  const customObjects = [
+    ...new Set(customFields.map((field) => field.split(".")[0]))
+  ];
 
-  // Generate and save image
-  const imageBuffer = await generateImage(markdownContent);
-  if (imageBuffer) {
-    await fs.writeFile(imageFilePath, imageBuffer);
-    console.log(`Created image file: ${imageFilePath}`);
+  // Generate and save object permissions
+  const objectPermissions = await generateObjectPermissionsTable(
+    permissionSetName,
+    customObjects,
+    metadata
+  );
+  const objectMdPath = path.join(designPath, "object-permissions.md");
+  await fs.writeFile(objectMdPath, objectPermissions);
+  console.log(`Created object permissions markdown file: ${objectMdPath}`);
+
+  const objectImageBuffer = await generateImage(objectPermissions);
+  if (objectImageBuffer) {
+    const objectImgPath = path.join(designPath, "object-permissions.png");
+    await fs.writeFile(objectImgPath, objectImageBuffer);
+    console.log(`Created object permissions image file: ${objectImgPath}`);
+  }
+
+  // Generate and save field permissions
+  const fieldPermissions = await generateFieldPermissionsTable(
+    permissionSetName,
+    customFields,
+    metadata
+  );
+  const fieldMdPath = path.join(designPath, "field-permissions.md");
+  await fs.writeFile(fieldMdPath, fieldPermissions);
+  console.log(`Created field permissions markdown file: ${fieldMdPath}`);
+
+  const fieldImageBuffer = await generateImage(fieldPermissions);
+  if (fieldImageBuffer) {
+    const fieldImgPath = path.join(designPath, "field-permissions.png");
+    await fs.writeFile(fieldImgPath, fieldImageBuffer);
+    console.log(`Created field permissions image file: ${fieldImgPath}`);
   }
 }
 
-async function generateAllDesigns(permissionSets, customObjects) {
+async function generateAllDesigns(permissionSets, customFields) {
   for (const ps of permissionSets) {
-    const markdownContent = await generateMarkdownTable(ps, customObjects);
-    await createDesignFolder(ps, markdownContent);
+    const metadata = await getPermissionSetMetadata(ps);
+    await createDesignFolder(ps, metadata, customFields);
   }
 }
 
-async function generateAllSummary(permissionSets, customObjects) {
+async function generateAllSummary(permissionSets, customFields) {
   const allPath = path.join(".design", "permissionsets", "all");
   try {
     await fs.access(allPath);
@@ -306,9 +384,15 @@ async function generateAllSummary(permissionSets, customObjects) {
     console.log(`Created folder: ${allPath}`);
   }
 
-  let markdownContent = `# オブジェクト権限設計書
+  // Get custom objects from custom fields
+  const customObjects = [
+    ...new Set(customFields.map((field) => field.split(".")[0]))
+  ];
 
-### 権限の説明
+  // Generate object permissions summary
+  let objectMarkdownContent = `# オブジェクト権限設計書
+
+### オブジェクト権限の説明
 - C: レコードの作成
 - R: レコードの参照
 - U: レコードの編集
@@ -321,17 +405,15 @@ async function generateAllSummary(permissionSets, customObjects) {
 
 | オブジェクト名 | オブジェクトAPI名`;
 
-  // Add permission set names as columns
   permissionSets.forEach((ps) => {
-    markdownContent += ` | ${ps}`;
+    objectMarkdownContent += ` | ${ps}`;
   });
-  markdownContent += " |\n|:--|:--";
+  objectMarkdownContent += " |\n|:--|:--";
   permissionSets.forEach(() => {
-    markdownContent += "|:--";
+    objectMarkdownContent += "|:--";
   });
-  markdownContent += "|";
+  objectMarkdownContent += "|";
 
-  // Get permissions for each object across all permission sets
   for (const objName of customObjects) {
     const displayName = objName.replace("__c", "");
     let row = `\n| ${displayName} | ${objName}`;
@@ -357,18 +439,85 @@ async function generateAllSummary(permissionSets, customObjects) {
       row += ` | ${permissions}`;
     }
     row += " |";
-    markdownContent += row;
+    objectMarkdownContent += row;
   }
 
-  const designFilePath = path.join(allPath, "object-permissions.md");
-  await fs.writeFile(designFilePath, markdownContent);
-  console.log(`Created summary markdown file: ${designFilePath}`);
+  // Save object permissions summary
+  const objectMdPath = path.join(allPath, "object-permissions.md");
+  await fs.writeFile(objectMdPath, objectMarkdownContent);
+  console.log(
+    `Created object permissions summary markdown file: ${objectMdPath}`
+  );
 
-  const imageBuffer = await generateImage(markdownContent);
-  if (imageBuffer) {
-    const imageFilePath = path.join(allPath, "object-permissions.png");
-    await fs.writeFile(imageFilePath, imageBuffer);
-    console.log(`Created summary image file: ${imageFilePath}`);
+  const objectImageBuffer = await generateImage(objectMarkdownContent);
+  if (objectImageBuffer) {
+    const objectImgPath = path.join(allPath, "object-permissions.png");
+    await fs.writeFile(objectImgPath, objectImageBuffer);
+    console.log(
+      `Created object permissions summary image file: ${objectImgPath}`
+    );
+  }
+
+  // Generate field permissions summary
+  let fieldMarkdownContent = `# 項目権限設計書
+
+### 項目権限の説明
+- R: 参照可能
+- RU: 参照・編集可能
+- -: 権限なし
+
+### 項目権限一覧
+
+| オブジェクト名 | オブジェクトAPI名 | 項目名 | 項目API名`;
+
+  permissionSets.forEach((ps) => {
+    fieldMarkdownContent += ` | ${ps}`;
+  });
+  fieldMarkdownContent += " |\n|:--|:--|:--|:--";
+  permissionSets.forEach(() => {
+    fieldMarkdownContent += "|:--";
+  });
+  fieldMarkdownContent += "|";
+
+  for (const fieldFullName of customFields) {
+    const [objName, fieldName] = fieldFullName.split(".");
+    const displayName = objName.replace("__c", "");
+    let row = `\n| ${displayName} | ${objName} | ${fieldName} | ${fieldName}`;
+
+    for (const ps of permissionSets) {
+      const metadata = await getPermissionSetMetadata(ps);
+      const fieldPerm = metadata.PermissionSet.fieldPermissions?.find(
+        (p) => p.field === fieldFullName
+      );
+
+      let permission = "-";
+      if (fieldPerm) {
+        if (fieldPerm.readable && fieldPerm.editable) {
+          permission = "RU";
+        } else if (fieldPerm.readable) {
+          permission = "R";
+        }
+      }
+      row += ` | ${permission}`;
+    }
+    row += " |";
+    fieldMarkdownContent += row;
+  }
+
+  // Save field permissions summary
+  const fieldMdPath = path.join(allPath, "field-permissions.md");
+  await fs.writeFile(fieldMdPath, fieldMarkdownContent);
+  console.log(
+    `Created field permissions summary markdown file: ${fieldMdPath}`
+  );
+
+  const fieldImageBuffer = await generateImage(fieldMarkdownContent);
+  if (fieldImageBuffer) {
+    const fieldImgPath = path.join(allPath, "field-permissions.png");
+    await fs.writeFile(fieldImgPath, fieldImageBuffer);
+    console.log(
+      `Created field permissions summary image file: ${fieldImgPath}`
+    );
   }
 }
 
@@ -403,18 +552,15 @@ async function main() {
       }
     ]);
 
-    const customObjects = await getCustomObjectsFromPackageXml();
+    const customFields = await getCustomFieldsFromPackageXml();
 
     if (selected === "All") {
-      await generateAllDesigns(permissionSets, customObjects);
+      await generateAllDesigns(permissionSets, customFields);
     } else if (selected === "All summary") {
-      await generateAllSummary(permissionSets, customObjects);
+      await generateAllSummary(permissionSets, customFields);
     } else {
-      const markdownContent = await generateMarkdownTable(
-        selected,
-        customObjects
-      );
-      await createDesignFolder(selected, markdownContent);
+      const metadata = await getPermissionSetMetadata(selected);
+      await createDesignFolder(selected, metadata, customFields);
     }
   } catch (error) {
     console.error("Error:", error.message);

@@ -1,12 +1,18 @@
 #!/usr/bin/env node
-const jsforce = require("jsforce");
-const fs = require("fs");
-const path = require("path");
-const { checkbox, confirm } = require("@inquirer/prompts");
-const { XMLParser } = require("fast-xml-parser");
+import jsforce from "jsforce";
+import fs from "fs";
+import path from "path";
+import { checkbox, confirm } from "@inquirer/prompts";
+import { XMLParser } from "fast-xml-parser";
+import dotenv from "dotenv";
+import { fileURLToPath } from "url";
+import { dirname } from "path";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // プロジェクトルートの.envファイルから環境変数をロード
-require("dotenv").config({ path: path.join(__dirname, "../../.env") });
+dotenv.config({ path: path.join(__dirname, "../../.env") });
 
 // Salesforce認証情報（環境変数から取得）
 const username = process.env.SF_USERNAME;

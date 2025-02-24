@@ -3,6 +3,7 @@ import { XMLParser } from "fast-xml-parser";
 import fs from "fs/promises";
 import path from "path";
 import { createCanvas } from "canvas";
+import { execSync } from "child_process";
 
 async function getCustomObjectsFromPackageXml() {
   const xmlContent = await fs.readFile("manifest/package.xml", "utf-8");
@@ -18,22 +19,79 @@ async function getCustomObjectsFromPackageXml() {
   return customObjects ? customObjects.members : [];
 }
 
-async function getPermissionSetMetadata(permissionSetName) {
-  const xmlContent = await fs.readFile(
-    `force-app/main/default/permissionsets/${permissionSetName}.permissionset-meta.xml`,
-    "utf-8"
+async function retrievePermissionSet(permissionSetName) {
+  console.log(
+    `Retrieving permission set ${permissionSetName} from Salesforce...`
   );
-  const parser = new XMLParser({
-    ignoreAttributes: true,
-    isArray: (name) =>
-      [
-        "fieldPermissions",
-        "objectPermissions",
-        "recordTypeVisibilities",
-        "tabSettings"
-      ].includes(name)
-  });
-  return parser.parse(xmlContent);
+  try {
+    // Create a temporary package.xml for retrieving the permission set
+    const tempPackageXml = `<?xml version="1.0" encoding="UTF-8"?>
+<Package xmlns="http://soap.sforce.com/2006/04/metadata">
+    <types>
+        <members>${permissionSetName}</members>
+        <name>PermissionSet</name>
+    </types>
+    <version>59.0</version>
+</Package>`;
+
+    const tempDir = ".temp";
+    await fs.mkdir(tempDir, { recursive: true });
+    await fs.writeFile(path.join(tempDir, "package.xml"), tempPackageXml);
+
+    // Execute SFDX retrieve command
+    execSync(`sf project retrieve start -x ${tempDir}/package.xml`, {
+      stdio: "inherit"
+    });
+
+    // Clean up temp directory
+    await fs.rm(tempDir, { recursive: true, force: true });
+
+    console.log(`Successfully retrieved permission set ${permissionSetName}`);
+    return true;
+  } catch (error) {
+    console.error(`Error retrieving permission set: ${error.message}`);
+    throw error;
+  }
+}
+
+async function getPermissionSetMetadata(permissionSetName) {
+  const permissionSetPath = `force-app/main/default/permissionsets/${permissionSetName}.permissionset-meta.xml`;
+
+  try {
+    const xmlContent = await fs.readFile(permissionSetPath, "utf-8");
+    const parser = new XMLParser({
+      ignoreAttributes: true,
+      isArray: (name) =>
+        [
+          "fieldPermissions",
+          "objectPermissions",
+          "recordTypeVisibilities",
+          "tabSettings"
+        ].includes(name)
+    });
+    return parser.parse(xmlContent);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      console.log(
+        `Permission set metadata not found. Retrieving from Salesforce...`
+      );
+      await retrievePermissionSet(permissionSetName);
+      // Try reading the file again after retrieval
+      const xmlContent = await fs.readFile(permissionSetPath, "utf-8");
+      const parser = new XMLParser({
+        ignoreAttributes: true,
+        isArray: (name) =>
+          [
+            "fieldPermissions",
+            "objectPermissions",
+            "recordTypeVisibilities",
+            "tabSettings"
+          ].includes(name)
+      });
+      return parser.parse(xmlContent);
+    }
+    throw error;
+  }
 }
 
 async function generateMarkdownTable(permissionSetName, customObjects) {

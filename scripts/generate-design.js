@@ -5,6 +5,20 @@ import path from "path";
 import { createCanvas } from "canvas";
 import { execSync } from "child_process";
 
+async function getCustomObjectsFromPackageXml() {
+  const xmlContent = await fs.readFile("manifest/package.xml", "utf-8");
+  const parser = new XMLParser({
+    ignoreAttributes: true,
+    isArray: (name, jpath) => name === "members"
+  });
+  const result = parser.parse(xmlContent);
+
+  const customObjects = result.Package.types.find(
+    (type) => type.name === "CustomObject"
+  );
+  return customObjects ? customObjects.members : [];
+}
+
 async function getCustomFieldsFromPackageXml() {
   const xmlContent = await fs.readFile("manifest/package.xml", "utf-8");
   const parser = new XMLParser({
@@ -328,10 +342,8 @@ async function createDesignFolder(permissionSetName, metadata, customFields) {
     console.log(`Created folder: ${designPath}`);
   }
 
-  // Get custom objects from custom fields
-  const customObjects = [
-    ...new Set(customFields.map((field) => field.split(".")[0]))
-  ];
+  // Get custom objects from package.xml
+  const customObjects = await getCustomObjectsFromPackageXml();
 
   // Generate and save object permissions
   const objectPermissions = await generateObjectPermissionsTable(
@@ -384,10 +396,8 @@ async function generateAllSummary(permissionSets, customFields) {
     console.log(`Created folder: ${allPath}`);
   }
 
-  // Get custom objects from custom fields
-  const customObjects = [
-    ...new Set(customFields.map((field) => field.split(".")[0]))
-  ];
+  // Get custom objects from package.xml
+  const customObjects = await getCustomObjectsFromPackageXml();
 
   // Generate object permissions summary
   let objectMarkdownContent = `# オブジェクト権限設計書

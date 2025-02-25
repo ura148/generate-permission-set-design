@@ -108,6 +108,19 @@ async function getPermissionSetMetadata(permissionSetName) {
   }
 }
 
+async function getObjectDescribe(objectName) {
+  try {
+    const describeData = await fs.readFile(
+      `.describe_data/${objectName}_describe.json`,
+      "utf-8"
+    );
+    return JSON.parse(describeData);
+  } catch (error) {
+    console.error(`Error reading describe data for ${objectName}:`, error);
+    return null;
+  }
+}
+
 async function generateObjectPermissionsTable(
   permissionSetName,
   customObjects,
@@ -131,7 +144,8 @@ async function generateObjectPermissionsTable(
 | オブジェクト名 | オブジェクトAPI名 | 権限 
 |:--|:--|:--`;
 
-  const objectRows = customObjects.map((objName) => {
+  const objectRows = [];
+  for (const objName of customObjects) {
     const objPermission = metadata.PermissionSet.objectPermissions?.find(
       (p) => p.object === objName
     );
@@ -149,12 +163,27 @@ async function generateObjectPermissionsTable(
       if (permissions === "") permissions = "-";
     }
 
-    const displayName = objName.replace("__c", "");
-    return `| ${displayName} | ${objName} | ${permissions} `;
-  });
+    const objectDescribe = await getObjectDescribe(objName);
+    const displayName = objectDescribe
+      ? objectDescribe.label
+      : objName.replace("__c", "");
+    objectRows.push(`| ${displayName} | ${objName} | ${permissions} `);
+  }
 
   markdownContent += "\n" + objectRows.join("\n");
   return markdownContent;
+}
+
+async function getFieldLabel(objectDescribe, fieldName) {
+  if (!objectDescribe || !objectDescribe.fields) return fieldName;
+  // カスタム項目も標準項目も、完全一致で検索
+  const field = objectDescribe.fields.find((f) => f.name === fieldName);
+  if (!field) {
+    console.error(`Field not found: ${fieldName}`);
+    return fieldName;
+  }
+  console.log(`Found field ${fieldName} with label ${field.label}`);
+  return field.label;
 }
 
 async function generateFieldPermissionsTable(
@@ -178,7 +207,11 @@ async function generateFieldPermissionsTable(
 
   for (const fieldFullName of customFields) {
     const [objName, fieldName] = fieldFullName.split(".");
-    const displayName = objName.replace("__c", "");
+    const objectDescribe = await getObjectDescribe(objName);
+    const displayName = objectDescribe
+      ? objectDescribe.label
+      : objName.replace("__c", "");
+    const fieldLabel = await getFieldLabel(objectDescribe, fieldName);
     const fieldPerm = metadata.PermissionSet.fieldPermissions?.find(
       (p) => p.field === fieldFullName
     );
@@ -191,7 +224,7 @@ async function generateFieldPermissionsTable(
         permission = "R";
       }
     }
-    markdownContent += `\n| ${displayName} | ${objName} | ${fieldName} | ${fieldName} | ${permission} |`;
+    markdownContent += `\n| ${displayName} | ${objName} | ${fieldLabel} | ${fieldName} | ${permission} |`;
   }
 
   return markdownContent;
@@ -425,7 +458,10 @@ async function generateAllSummary(permissionSets, customFields) {
   objectMarkdownContent += "|";
 
   for (const objName of customObjects) {
-    const displayName = objName.replace("__c", "");
+    const objectDescribe = await getObjectDescribe(objName);
+    const displayName = objectDescribe
+      ? objectDescribe.label
+      : objName.replace("__c", "");
     let row = `\n| ${displayName} | ${objName}`;
 
     for (const ps of permissionSets) {
@@ -491,8 +527,12 @@ async function generateAllSummary(permissionSets, customFields) {
 
   for (const fieldFullName of customFields) {
     const [objName, fieldName] = fieldFullName.split(".");
-    const displayName = objName.replace("__c", "");
-    let row = `\n| ${displayName} | ${objName} | ${fieldName} | ${fieldName}`;
+    const objectDescribe = await getObjectDescribe(objName);
+    const displayName = objectDescribe
+      ? objectDescribe.label
+      : objName.replace("__c", "");
+    const fieldLabel = await getFieldLabel(objectDescribe, fieldName);
+    let row = `\n| ${displayName} | ${objName} | ${fieldLabel} | ${fieldName}`;
 
     for (const ps of permissionSets) {
       const metadata = await getPermissionSetMetadata(ps);

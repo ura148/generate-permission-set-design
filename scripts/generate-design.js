@@ -128,7 +128,7 @@ async function generateObjectPermissionsTable(
 ) {
   let markdownContent = `# オブジェクト権限設計書
 
-## 権限セット: ${permissionSetName}
+## 権限セット: ${metadata.PermissionSet.label || permissionSetName}
 
 ### オブジェクト権限の説明
 - C: レコードの作成
@@ -193,7 +193,7 @@ async function generateFieldPermissionsTable(
 ) {
   let markdownContent = `# 項目権限設計書
 
-## 権限セット: ${permissionSetName}
+## 権限セット: ${metadata.PermissionSet.label || permissionSetName}
 
 ### 項目権限の説明
 - R: 参照可能
@@ -251,23 +251,32 @@ async function generateImage(markdownContent) {
   const rowHeight = 40;
   const padding = 20;
 
-  // 列幅を動的に設定
-  let columnWidths;
-  if (headerCells <= 3) {
-    // オブジェクト権限用
-    columnWidths = [200, 250, 100];
-  } else if (headerCells <= 5) {
-    // 基本的な項目権限用
-    columnWidths = [200, 250, 150, 200, 100];
-  } else {
-    // 複数の権限セットを含む場合
-    columnWidths = [
-      200, // オブジェクト名
-      250, // オブジェクトAPI名
-      150, // 項目名
-      200, // 項目API名
-      ...Array(headerCells - 4).fill(100) // 各権限セット用の列
-    ];
+  // 各列の最大幅を計算
+  const columnWidths = Array(headerCells).fill(0);
+  const minColumnWidth = 150; // 最小列幅
+
+  // テキストを測定するためのコンテキストを作成
+  const measureCanvas = createCanvas(1, 1);
+  const measureCtx = measureCanvas.getContext("2d");
+  measureCtx.font = "14px Arial";
+
+  // 各セルの内容を測定して最大幅を更新
+  for (const row of tableRows) {
+    const cells = row
+      .split("|")
+      .filter((cell) => cell.trim())
+      .map((cell) => cell.trim());
+
+    cells.forEach((cell, index) => {
+      if (index < headerCells) {
+        const textWidth = measureCtx.measureText(cell).width + cellPadding * 2;
+        columnWidths[index] = Math.max(
+          columnWidths[index],
+          textWidth,
+          minColumnWidth
+        );
+      }
+    });
   }
 
   const width =
@@ -448,9 +457,12 @@ async function generateAllSummary(permissionSets, customFields) {
 
 | オブジェクト名 | オブジェクトAPI名`;
 
-  permissionSets.forEach((ps) => {
-    objectMarkdownContent += ` | ${ps}`;
-  });
+  // 各権限セットのラベルを取得して使用
+  for (const ps of permissionSets) {
+    const metadata = await getPermissionSetMetadata(ps);
+    const label = metadata.PermissionSet.label || ps;
+    objectMarkdownContent += ` | ${label}`;
+  }
   objectMarkdownContent += " |\n|:--|:--";
   permissionSets.forEach(() => {
     objectMarkdownContent += "|:--";
@@ -516,9 +528,12 @@ async function generateAllSummary(permissionSets, customFields) {
 
 | オブジェクト名 | オブジェクトAPI名 | 項目名 | 項目API名`;
 
-  permissionSets.forEach((ps) => {
-    fieldMarkdownContent += ` | ${ps}`;
-  });
+  // 各権限セットのラベルを取得して使用
+  for (const ps of permissionSets) {
+    const metadata = await getPermissionSetMetadata(ps);
+    const label = metadata.PermissionSet.label || ps;
+    fieldMarkdownContent += ` | ${label}`;
+  }
   fieldMarkdownContent += " |\n|:--|:--|:--|:--";
   permissionSets.forEach(() => {
     fieldMarkdownContent += "|:--";

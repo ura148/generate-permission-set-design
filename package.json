@@ -16,7 +16,8 @@
     "postinstall": "husky install",
     "precommit": "lint-staged",
     "sf:describe:object": "node scripts/jsforce/describe.js ./.describe_data",
-    "sf:generate:design": "node scripts/generate-design.js"
+    "sf:generate:design": "node scripts/generate-design.js",
+    "sf:extract-permissions": "node scripts/extract-permissions.js"
   },
   "devDependencies": {
     "@lwc/eslint-plugin-lwc": "^2.0.0",
@@ -46,7 +47,7 @@
     "canvas": "^2.11.2",
     "dotenv": "^16.4.7",
     "fast-xml-parser": "^5.0.6",
-    "inquirer": "^12.4.2",
+    "inquirer": "^12.4.3",
     "jsforce": "^3.6.5"
   }
 }

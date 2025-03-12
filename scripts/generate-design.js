@@ -139,10 +139,9 @@ async function generateObjectPermissionsTable(
 - Ua: すべて変更
 - Fa: すべての項目表示
 
-### オブジェクト権限一覧
-
-| オブジェクト名 | オブジェクトAPI名 | 権限 
-|:--|:--|:--`;
+### オブジェクト権限一覧(table data)
+| オブジェクト名 | オブジェクトAPI名 | 権限 |
+|:--|:--|:--|`;
 
   const objectRows = [];
   for (const objName of customObjects) {
@@ -167,7 +166,7 @@ async function generateObjectPermissionsTable(
     const displayName = objectDescribe
       ? objectDescribe.label
       : objName.replace("__c", "");
-    objectRows.push(`| ${displayName} | ${objName} | ${permissions} `);
+    objectRows.push(`| ${displayName} | ${objName} | ${permissions} |`);
   }
 
   markdownContent += "\n" + objectRows.join("\n");
@@ -200,8 +199,7 @@ async function generateFieldPermissionsTable(
 - RU: 参照・編集可能
 - -: 権限なし
 
-### 項目権限一覧
-
+### 項目権限一覧(table data)
 | オブジェクト名 | オブジェクトAPI名 | 項目名 | 項目API名 | 権限 |
 |:--|:--|:--|:--|:--|`;
 
@@ -453,8 +451,7 @@ async function generateAllSummary(permissionSets, customFields) {
 - Ua: すべて変更
 - Fa: すべての項目表示
 
-### オブジェクト権限一覧
-
+### オブジェクト権限一覧(table data)
 | オブジェクト名 | オブジェクトAPI名`;
 
   // 各権限セットのラベルを取得して使用
@@ -524,8 +521,7 @@ async function generateAllSummary(permissionSets, customFields) {
 - RU: 参照・編集可能
 - -: 権限なし
 
-### 項目権限一覧
-
+### 項目権限一覧(table data)
 | オブジェクト名 | オブジェクトAPI名 | 項目名 | 項目API名`;
 
   // 各権限セットのラベルを取得して使用

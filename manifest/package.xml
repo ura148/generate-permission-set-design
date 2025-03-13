@@ -15,5 +15,10 @@
 		<members>PermissionSetTest02</members>
 		<name>PermissionSet</name>
 	</types>
+	<types>
+		<members>プロファイル01</members>
+		<members>プロファイル02</members>
+		<name>Profile</name>
+	</types>
 	<version>63.0</version>
 </Package>

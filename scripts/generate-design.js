@@ -108,6 +108,28 @@ async function getPermissionSetMetadata(permissionSetName) {
   }
 }
 
+async function getProfileMetadata(profileName) {
+  const profilePath = `force-app/main/default/profiles/${profileName}.profile-meta.xml`;
+
+  try {
+    const xmlContent = await fs.readFile(profilePath, "utf-8");
+    const parser = new XMLParser({
+      ignoreAttributes: true,
+      isArray: (name) =>
+        [
+          "fieldPermissions",
+          "objectPermissions",
+          "recordTypeVisibilities",
+          "tabSettings"
+        ].includes(name)
+    });
+    return parser.parse(xmlContent);
+  } catch (error) {
+    console.error(`Error reading profile metadata for ${profileName}:`, error);
+    throw error;
+  }
+}
+
 async function getObjectDescribe(objectName) {
   try {
     const describeData = await fs.readFile(
@@ -122,13 +144,13 @@ async function getObjectDescribe(objectName) {
 }
 
 async function generateObjectPermissionsTable(
-  permissionSetName,
+  profileName,
   customObjects,
   metadata
 ) {
   let markdownContent = `# オブジェクト権限設計書
 
-## 権限セット: ${metadata.PermissionSet.label || permissionSetName}
+## プロファイル: ${metadata.Profile.label || profileName}
 
 ### オブジェクト権限の説明
 - C: レコードの作成
@@ -145,7 +167,7 @@ async function generateObjectPermissionsTable(
 
   const objectRows = [];
   for (const objName of customObjects) {
-    const objPermission = metadata.PermissionSet.objectPermissions?.find(
+    const objPermission = metadata.Profile.objectPermissions?.find(
       (p) => p.object === objName
     );
     let permissions = "-";
@@ -186,13 +208,13 @@ async function getFieldLabel(objectDescribe, fieldName) {
 }
 
 async function generateFieldPermissionsTable(
-  permissionSetName,
+  profileName,
   customFields,
   metadata
 ) {
   let markdownContent = `# 項目権限設計書
 
-## 権限セット: ${metadata.PermissionSet.label || permissionSetName}
+## プロファイル: ${metadata.Profile.label || profileName}
 
 ### 項目権限の説明
 - R: 参照可能
@@ -210,7 +232,7 @@ async function generateFieldPermissionsTable(
       ? objectDescribe.label
       : objName.replace("__c", "");
     const fieldLabel = await getFieldLabel(objectDescribe, fieldName);
-    const fieldPerm = metadata.PermissionSet.fieldPermissions?.find(
+    const fieldPerm = metadata.Profile.fieldPermissions?.find(
       (p) => p.field === fieldFullName
     );
 
@@ -365,10 +387,17 @@ async function getPermissionSetsFromPackageXml() {
   });
   const result = parser.parse(xmlContent);
 
-  const permissionSets = result.Package.types.find(
+  const permissionSetsType = result.Package.types.find(
     (type) => type.name === "PermissionSet"
   );
-  return permissionSets ? permissionSets.members : [];
+  const permissionSets = permissionSetsType ? permissionSetsType.members : [];
+
+  const profileType = result.Package.types.find(
+    (type) => type.name === "Profile"
+  );
+  const profiles = profileType ? profileType.members : [];
+
+  return { permissionSets, profiles };
 }
 
 async function createDesignFolder(permissionSetName, metadata, customFields) {
@@ -427,7 +456,7 @@ async function generateAllDesigns(permissionSets, customFields) {
   }
 }
 
-async function generateAllSummary(permissionSets, customFields) {
+async function generateAllSummary(permissionSets, profiles, customFields) {
   const allPath = path.join(".design", "permissionsets", "all");
   try {
     await fs.access(allPath);
@@ -454,14 +483,22 @@ async function generateAllSummary(permissionSets, customFields) {
 ### オブジェクト権限一覧(table data)
 | オブジェクト名 | オブジェクトAPI名`;
 
-  // 各権限セットのラベルを取得して使用
+  // 各権限セット、プロファイルのラベルを取得して使用
   for (const ps of permissionSets) {
     const metadata = await getPermissionSetMetadata(ps);
     const label = metadata.PermissionSet.label || ps;
     objectMarkdownContent += ` | ${label}`;
   }
+  for (const profile of profiles) {
+    const metadata = await getProfileMetadata(profile);
+    const label = metadata.Profile.label || profile;
+    objectMarkdownContent += ` | ${label}`;
+  }
   objectMarkdownContent += " |\n|:--|:--";
   permissionSets.forEach(() => {
+    objectMarkdownContent += "|:--";
+  });
+  profiles.forEach(() => {
     objectMarkdownContent += "|:--";
   });
   objectMarkdownContent += "|";
@@ -476,6 +513,27 @@ async function generateAllSummary(permissionSets, customFields) {
     for (const ps of permissionSets) {
       const metadata = await getPermissionSetMetadata(ps);
       const objPermission = metadata.PermissionSet.objectPermissions?.find(
+        (p) => p.object === objName
+      );
+
+      let permissions = "-";
+      if (objPermission) {
+        permissions = "";
+        if (objPermission.allowCreate) permissions += "C";
+        if (objPermission.allowRead) permissions += "R";
+        if (objPermission.allowEdit) permissions += "U";
+        if (objPermission.allowDelete) permissions += "D";
+        if (objPermission.viewAllRecords) permissions += "Va";
+        if (objPermission.modifyAllRecords) permissions += "Ua";
+        if (objPermission.viewAllFields) permissions += "Fa";
+        if (permissions === "") permissions = "-";
+      }
+      row += ` | ${permissions}`;
+    }
+
+    for (const profile of profiles) {
+      const metadata = await getProfileMetadata(profile);
+      const objPermission = metadata.Profile.objectPermissions?.find(
         (p) => p.object === objName
       );
 
@@ -524,14 +582,22 @@ async function generateAllSummary(permissionSets, customFields) {
 ### 項目権限一覧(table data)
 | オブジェクト名 | オブジェクトAPI名 | 項目名 | 項目API名`;
 
-  // 各権限セットのラベルを取得して使用
+  // 各権限セット、プロファイルのラベルを取得して使用
   for (const ps of permissionSets) {
     const metadata = await getPermissionSetMetadata(ps);
     const label = metadata.PermissionSet.label || ps;
     fieldMarkdownContent += ` | ${label}`;
   }
+  for (const profile of profiles) {
+    const metadata = await getProfileMetadata(profile);
+    const label = metadata.Profile.label || profile;
+    fieldMarkdownContent += ` | ${label}`;
+  }
   fieldMarkdownContent += " |\n|:--|:--|:--|:--";
   permissionSets.forEach(() => {
+    fieldMarkdownContent += "|:--";
+  });
+  profiles.forEach(() => {
     fieldMarkdownContent += "|:--";
   });
   fieldMarkdownContent += "|";
@@ -548,6 +614,23 @@ async function generateAllSummary(permissionSets, customFields) {
     for (const ps of permissionSets) {
       const metadata = await getPermissionSetMetadata(ps);
       const fieldPerm = metadata.PermissionSet.fieldPermissions?.find(
+        (p) => p.field === fieldFullName
+      );
+
+      let permission = "-";
+      if (fieldPerm) {
+        if (fieldPerm.readable && fieldPerm.editable) {
+          permission = "RU";
+        } else if (fieldPerm.readable) {
+          permission = "R";
+        }
+      }
+      row += ` | ${permission}`;
+    }
+
+    for (const profile of profiles) {
+      const metadata = await getProfileMetadata(profile);
+      const fieldPerm = metadata.Profile.fieldPermissions?.find(
         (p) => p.field === fieldFullName
       );
 
@@ -584,7 +667,8 @@ async function generateAllSummary(permissionSets, customFields) {
 
 async function main() {
   try {
-    const permissionSets = await getPermissionSetsFromPackageXml();
+    const { permissionSets, profiles } =
+      await getPermissionSetsFromPackageXml();
 
     if (!Array.isArray(permissionSets) || permissionSets.length === 0) {
       console.error("No permission sets found in package.xml");
@@ -608,6 +692,10 @@ async function main() {
           ...permissionSets.map((ps) => ({
             name: ps,
             value: ps
+          })),
+          ...profiles.map((profile) => ({
+            name: profile,
+            value: profile
           }))
         ]
       }
@@ -618,10 +706,80 @@ async function main() {
     if (selected === "All") {
       await generateAllDesigns(permissionSets, customFields);
     } else if (selected === "All summary") {
-      await generateAllSummary(permissionSets, customFields);
+      await generateAllSummary(permissionSets, profiles, customFields);
     } else {
-      const metadata = await getPermissionSetMetadata(selected);
-      await createDesignFolder(selected, metadata, customFields);
+      // Differentiate between PermissionSets and Profiles
+      if (permissionSets.includes(selected)) {
+        const metadata = await getPermissionSetMetadata(selected);
+        await createDesignFolder(selected, metadata, customFields);
+      } else {
+        // Handle Profiles
+        try {
+          const metadata = await getProfileMetadata(selected);
+          const designPath = path.join(".design", "profiles", selected);
+
+          try {
+            await fs.access(designPath);
+            console.log(`Folder already exists: ${designPath}`);
+          } catch {
+            await fs.mkdir(designPath, { recursive: true });
+            console.log(`Created folder: ${designPath}`);
+          }
+
+          // Get custom objects from package.xml
+          const customObjects = await getCustomObjectsFromPackageXml();
+
+          // Generate and save object permissions
+          const objectPermissions = await generateObjectPermissionsTable(
+            selected,
+            customObjects,
+            metadata
+          );
+          const objectMdPath = path.join(designPath, "object-permissions.md");
+          await fs.writeFile(objectMdPath, objectPermissions);
+          console.log(
+            `Created object permissions markdown file: ${objectMdPath}`
+          );
+
+          const objectImageBuffer = await generateImage(objectPermissions);
+          if (objectImageBuffer) {
+            const objectImgPath = path.join(
+              designPath,
+              "object-permissions.png"
+            );
+            await fs.writeFile(objectImgPath, objectImageBuffer);
+            console.log(
+              `Created object permissions image file: ${objectImgPath}`
+            );
+          }
+
+          // Generate and save field permissions
+          const fieldPermissions = await generateFieldPermissionsTable(
+            selected,
+            customFields,
+            metadata
+          );
+          const fieldMdPath = path.join(designPath, "field-permissions.md");
+          await fs.writeFile(fieldMdPath, fieldPermissions);
+          console.log(
+            `Created field permissions markdown file: ${fieldMdPath}`
+          );
+
+          const fieldImageBuffer = await generateImage(fieldPermissions);
+          if (fieldImageBuffer) {
+            const fieldImgPath = path.join(designPath, "field-permissions.png");
+            await fs.writeFile(fieldImgPath, fieldImageBuffer);
+            console.log(
+              `Created field permissions image file: ${fieldImgPath}`
+            );
+          }
+        } catch (error) {
+          console.error(
+            `Error generating design for profile ${selected}:`,
+            error
+          );
+        }
+      }
     }
   } catch (error) {
     console.error("Error:", error.message);

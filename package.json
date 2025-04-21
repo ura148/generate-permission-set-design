@@ -16,7 +16,7 @@
     "postinstall": "husky install",
     "precommit": "lint-staged",
     "sf:describe:object": "node scripts/jsforce/describe.js ./.describe_data",
-    "sf:generate:design": "node scripts/generate-design.js",
+    "sf:generate:design": "node scripts/jsforce/generate-design.js",
     "sf:extract-permissions": "node scripts/extract-permissions.js"
   },
   "devDependencies": {

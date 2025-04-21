@@ -131,13 +131,17 @@ async function getProfileMetadata(profileName) {
 }
 
 async function getObjectDescribe(objectName) {
+  const filePath = `.describe_data/${objectName}_describe.json`;
   try {
-    const describeData = await fs.readFile(
-      `.describe_data/${objectName}_describe.json`,
-      "utf-8"
-    );
+    await fs.access(filePath);
+    const describeData = await fs.readFile(filePath, "utf-8");
     return JSON.parse(describeData);
   } catch (error) {
+    if (error.code === "ENOENT") {
+      throw new Error(
+        `Describe data not found for ${objectName}. Please run "npm run sf:describe:object" to generate the describe data.`
+      );
+    }
     console.error(`Error reading describe data for ${objectName}:`, error);
     return null;
   }
@@ -778,6 +782,11 @@ async function main() {
             `Error generating design for profile ${selected}:`,
             error
           );
+          if (error.code === "ENOENT") {
+            throw new Error(
+              `Profile file not found. Please ensure you have retrieved the latest metadata from your Salesforce organization.`
+            );
+          }
         }
       }
     }
